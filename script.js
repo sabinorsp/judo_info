@@ -10,7 +10,16 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             // Ajusta o caminho baseado na localização atual
             const basePath = window.location.pathname.includes('views') ? '../' : '';
-            const response = await fetch(`${basePath}conteudo/${fileName}.md`);
+            
+            // Se o fileName contém um caminho, adiciona o prefixo 'conteudo/' se necessário
+            let filePath = fileName;
+            if (fileName.includes('/')) {
+                filePath = fileName.startsWith('conteudo/') ? fileName : `conteudo/${fileName}`;
+            } else {
+                filePath = `conteudo/${fileName}.md`;
+            }
+            
+            const response = await fetch(`${basePath}${filePath}`);
             if (!response.ok) throw new Error('Arquivo não encontrado');
             const text = await response.text();
             return text;
@@ -21,14 +30,30 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Função para converter Markdown para HTML
-    function markdownToHtml(markdown) {
+    function markdownToHtml(markdown, currentPath = '') {
+        // Ajusta os caminhos das imagens
+        let html = markdown.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt, src) => {
+            // Se o caminho da imagem for relativo, adiciona o caminho base
+            if (!src.startsWith('http') && !src.startsWith('/')) {
+                // Constrói o caminho absoluto para a imagem
+                const basePath = window.location.pathname.includes('views') ? '../' : '';
+                src = `${basePath}conteudo/${currentPath}${src}`;
+            }
+            return `<img src="${src}" alt="${alt}">`;
+        });
+
+        // Converte links markdown para HTML
+        html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, text, url) => {
+            return `<a href="${url}">${text}</a>`;
+        });
+
         // Converte títulos
-        let html = markdown.replace(/^# (.*$)/gm, '<h1>$1</h1>');
+        html = html.replace(/^# (.*$)/gm, '<h1>$1</h1>');
         html = html.replace(/^## (.*$)/gm, '<h2>$1</h2>');
         html = html.replace(/^### (.*$)/gm, '<h3>$1</h3>');
         
         // Converte parágrafos
-        html = html.replace(/^(?!<h[1-3]|<ul|<ol|<li)(.*$)/gm, '<p>$1</p>');
+        html = html.replace(/^(?!<h[1-3]|<ul|<ol|<li|<a)(.*$)/gm, '<p>$1</p>');
         
         // Converte listas
         html = html.replace(/^\* (.*$)/gm, '<li>$1</li>');
@@ -40,8 +65,26 @@ document.addEventListener('DOMContentLoaded', () => {
     // Função para carregar e exibir o conteúdo
     async function displayContent(fileName) {
         const markdown = await loadContent(fileName);
-        const html = markdownToHtml(markdown);
+        // Extrai o caminho base do nome do arquivo
+        const currentPath = fileName.includes('/') ? fileName.substring(0, fileName.lastIndexOf('/') + 1) : '';
+        const html = markdownToHtml(markdown, currentPath);
         contentDiv.innerHTML = html;
+
+        // Adiciona eventos aos links internos
+        contentDiv.querySelectorAll('a').forEach(link => {
+            link.addEventListener('click', async (e) => {
+                e.preventDefault();
+                const href = link.getAttribute('href');
+                if (href.endsWith('.md')) {
+                    // Remove o prefixo 'conteudo/' se existir
+                    const cleanPath = href.replace('conteudo/', '');
+                    const markdown = await loadContent(cleanPath);
+                    const currentPath = cleanPath.includes('/') ? cleanPath.substring(0, cleanPath.lastIndexOf('/') + 1) : '';
+                    const html = markdownToHtml(markdown, currentPath);
+                    contentDiv.innerHTML = html;
+                }
+            });
+        });
     }
 
     // Adiciona eventos de clique aos links de navegação
